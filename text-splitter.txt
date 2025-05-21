@@ -1,0 +1,87 @@
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.pgvector import PGVector
+from langchain.embeddings.openai import OpenAIEmbeddings
+
+# Step 1: Read the file
+with open("abc.txt", "r") as f:
+    text = f.read()
+
+# Step 2: Split the text into chunks
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,       # adjust as needed
+    chunk_overlap=100      # adjust as needed
+)
+chunks = text_splitter.split_text(text)  # List[str][1][3][5]
+
+# Step 3: Initialize embedding model
+embeddings_model = OpenAIEmbeddings()  # or your preferred embedding model
+
+# Step 4: Connect to pgVector vectorstore
+CONNECTION_STRING = "postgresql+psycopg2://user:password@host:port/dbname"
+COLLECTION_NAME = "abc_text_data"
+
+vectorstore = PGVector(
+    embedding_function=embeddings_model,
+    connection=CONNECTION_STRING,
+    collection_name=COLLECTION_NAME,
+    distance_strategy="cosine",
+)
+
+# Step 5: Add chunks to the vectorstore
+vectorstore.add_texts(chunks)
+
+
+-----------
+
+import json
+from langchain.vectorstores.pgvector import PGVector
+from langchain.embeddings.openai import OpenAIEmbeddings  # or your embedding model
+from langchain.document_loaders.json_loader import JSONLoader
+
+# 1. Load and parse your JSON files
+def extract_metadata(record):
+    # Customize this to extract relevant metadata fields
+    return {
+        "table_name": record.get("table_name"),
+        "business_description": record.get("business_description"),
+        "technical_details": record.get("technical_details"),
+        # Add more fields as needed
+    }
+
+# Example: Load all metadata records from a JSON file
+with open("your_metadata_file.json", "r") as f:
+    data = json.load(f)
+
+# Flatten if needed (depends on your JSON structure)
+records = data if isinstance(data, list) else data["tables"]
+
+# 2. Prepare texts and metadata for embedding
+texts = []
+metadatas = []
+for record in records:
+    # Combine relevant fields into a single text string for embedding
+    text = f"{record['table_name']}: {record.get('business_description', '')} {record.get('technical_details', '')}"
+    texts.append(text)
+    metadatas.append(extract_metadata(record))
+
+# 3. Generate embeddings
+embeddings_model = OpenAIEmbeddings()  # Replace with your embedding model if needed
+embeddings = embeddings_model.embed_documents(texts)
+
+# 4. Connect to pgVector vectorstore
+CONNECTION_STRING = "postgresql+psycopg2://user:password@host:port/dbname"
+COLLECTION_NAME = "table_metadata"
+
+vectorstore = PGVector(
+    embedding_function=embeddings_model,
+    connection=CONNECTION_STRING,
+    collection_name=COLLECTION_NAME,
+    distance_strategy="cosine",
+)
+
+# 5. Add embeddings and metadata to the vectorstore
+vectorstore.add_embeddings(
+    texts=texts,
+    embeddings=embeddings,
+    metadatas=metadatas
+)
