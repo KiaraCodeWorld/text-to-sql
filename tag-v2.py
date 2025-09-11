@@ -1,20 +1,23 @@
-# Call Data AI Chat Application with Lotus.ai TAG - Setup Guide
+# Call Data AI Chat Application with Lotus.ai TAG - Complete Setup Guide
 
-## 🚀 Quick Start
+## 🚀 Installation & Environment Setup
 
-### 1. Installation
+### 1. Install Dependencies
 
 ```bash
-# Install required packages
+# Core packages
 pip install lotus-ai gradio pandas psycopg2-binary python-dotenv
 
-# For GPU support (optional but recommended)
+# For different LLM providers
+pip install litellm groq openai google-generativeai
+
+# Optional: GPU acceleration for embeddings
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
-### 2. Environment Setup
+### 2. Environment Configuration
 
-Create a `.env` file in your project directory:
+Create a `.env` file:
 
 ```bash
 # Database Configuration
@@ -24,108 +27,441 @@ DB_NAME=your_database_name
 DB_USER=your_username
 DB_PASSWORD=your_password
 
-# LLM API Keys (choose one or more)
+# API Keys (you need at least one)
 GROQ_API_KEY=gsk_your_groq_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
-OPENAI_API_KEY=sk-your_openai_key_here
+OPENAI_API_KEY=sk_your_openai_key_here
 
-# Optional: Embedding model cache directory
+# Optional settings
 LOTUS_CACHE_DIR=./lotus_cache
+LOTUS_LOG_LEVEL=INFO
 ```
 
-### 3. Database Schema Verification
+### 3. Get API Keys
 
-Ensure your PostgreSQL table exists with the correct structure:
+#### Groq API (Recommended - Fast & Free Tier)
+1. Go to https://console.groq.com/
+2. Sign up and create an API key
+3. Free tier includes generous limits
 
-```sql
--- Verify table structure
-SELECT column_name, data_type 
-FROM information_schema.columns 
-WHERE table_schema = 'cx' AND table_name = 'member_call_info';
+#### Google Gemini API
+1. Go to https://ai.google.dev/
+2. Get API key from Google AI Studio
+3. Free tier available
 
--- Expected columns:
--- caller (varchar)
--- agent (varchar) 
--- pty_id (varchar)
--- calldate (timestamp/date)
--- enterprise (varchar)
--- division (varchar)
--- business_name (varchar)
--- caller_intent (text)
-```
+## 🧪 Testing Lotus.ai with Sample Data
 
-### 4. Test Database Connection
+### Step 1: Basic Lotus Setup Test
 
-```python
-import psycopg2
-import pandas as pd
-
-# Test connection
-conn = psycopg2.connect(
-    host="localhost",
-    port="5432", 
-    database="your_db",
-    user="your_user",
-    password="your_password"
-)
-
-# Test query
-df = pd.read_sql("SELECT COUNT(*) FROM cx.member_call_info", conn)
-print(f"Total records: {df.iloc[0,0]}")
-```
-
-## 🔧 Configuration Options
-
-### LLM Model Options
-
-The application supports multiple LLM providers through LiteLLM:
-
-```python
-# Groq (Fast, good for production)
-lm = LM(model="groq/llama-3.1-70b-versatile")
-
-# OpenAI (High quality)  
-lm = LM(model="gpt-4o-mini")
-
-# Google (Good balance)
-lm = LM(model="gemini/gemini-1.5-flash")
-
-# Local models (if you have them)
-lm = LM(model="ollama/llama3.1")
-```
-
-### Embedding Models
-
-```python
-# Default (good performance)
-rm = SentenceTransformersRM(model="intfloat/e5-base-v2")
-
-# Higher quality (slower)
-rm = SentenceTransformersRM(model="intfloat/e5-large-v2")
-
-# Multilingual support
-rm = SentenceTransformersRM(model="intfloat/multilingual-e5-base")
-```
-
-## 🧪 Testing Semantic Operations
-
-### Sample Test Script
+Create `test_lotus_basic.py`:
 
 ```python
 import pandas as pd
 import lotus
-from lotus.models import LM, SentenceTransformersRM
+from lotus.models import LM, SentenceTransformersRM, CrossEncoderReranker
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure Lotus
-lm = LM(model="groq/llama-3.1-70b-versatile") 
-rm = SentenceTransformersRM(model="intfloat/e5-base-v2")
-lotus.settings.configure(lm=lm, rm=rm)
+os.environ['GROQ_API_KEY'] = os.getenv('GROQ_API_KEY', 'your-key-here')
+
+try:
+    # Initialize models
+    lm = LM(model='groq/llama-3.1-70b-versatile')
+    rm = SentenceTransformersRM(model="intfloat/e5-base-v2")
+    reranker = CrossEncoderReranker(model="mixedbread-ai/mxbai-rerank-large-v1")
+    
+    # Configure Lotus
+    lotus.settings.configure(lm=lm, rm=rm, reranker=reranker)
+    
+    print("✅ Lotus.ai configured successfully!")
+    
+except Exception as e:
+    print(f"❌ Error configuring Lotus: {e}")
+    exit(1)
 
 # Create sample call data
 sample_data = {
-    "caller": ["555-0101", "555-0102", "555-0103"],
-    "agent": ["John Smith", "Jane Doe
+    "caller": ["+1-555-0101", "+1-555-0102", "+1-555-0103", "+1-555-0104", "+1-555-0105"],
+    "agent": ["John Smith", "Jane Doe", "Bob Wilson", "Alice Brown", "Charlie Davis"],
+    "pty_id": ["PTY001", "PTY002", "PTY003", "PTY004", "PTY005"],
+    "calldate": ["2024-01-15", "2024-01-15", "2024-01-16", "2024-01-16", "2024-01-17"],
+    "enterprise": ["Acme Corp", "TechStart Inc", "Global Systems", "Acme Corp", "TechStart Inc"],
+    "division": ["Billing", "Technical Support", "Sales", "Customer Service", "Technical Support"],
+    "business_name": ["Acme Corporation", "TechStart Innovations", "Global Systems Ltd", "Acme Corporation", "TechStart Innovations"],
+    "caller_intent": [
+        "billing inquiry about overcharge",
+        "technical issue with software installation",
+        "interested in purchasing new product",
+        "complaint about service quality",
+        "need help with system configuration"
+    ]
+}
 
+df = pd.DataFrame(sample_data)
+print("📊 Sample data created:")
+print(df.head())
+print("\n" + "="*50)
+
+# Test 1: Semantic Filter
+print("🔍 Test 1: Semantic Filter")
+print("Query: Find calls related to technical problems")
+
+try:
+    filtered_df = df.sem_filter("caller_intent is related to technical problems or issues")
+    print(f"Original rows: {len(df)}, Filtered rows: {len(filtered_df)}")
+    print("Filtered results:")
+    print(filtered_df[['caller', 'agent', 'division', 'caller_intent']])
+    print("✅ Semantic filter working!")
+except Exception as e:
+    print(f"❌ Semantic filter error: {e}")
+
+print("\n" + "="*50)
+
+# Test 2: Semantic Map
+print("🗺️ Test 2: Semantic Map")
+print("Query: Categorize the sentiment of each call")
+
+try:
+    mapped_df = df.sem_map("What is the sentiment (positive/negative/neutral) of this {caller_intent}?")
+    print("Mapped results with sentiment:")
+    print(mapped_df[['caller_intent', 'sem_map']].head())
+    print("✅ Semantic mapping working!")
+except Exception as e:
+    print(f"❌ Semantic mapping error: {e}")
+
+print("\n" + "="*50)
+
+# Test 3: Semantic Top-K
+print("📈 Test 3: Semantic Top-K")
+print("Query: Rank calls by urgency/importance")
+
+try:
+    topk_df, stats = df.sem_topk("Which {caller_intent} represents the most urgent or important issue?", K=3, return_stats=True)
+    print(f"Top 3 most important calls:")
+    print(topk_df[['caller', 'division', 'caller_intent']])
+    print(f"Stats: {stats}")
+    print("✅ Semantic top-k working!")
+except Exception as e:
+    print(f"❌ Semantic top-k error: {e}")
+
+print("\n" + "="*50)
+
+# Test 4: Semantic Aggregate
+print("📊 Test 4: Semantic Aggregation")
+print("Query: Summarize common themes by division")
+
+try:
+    # Group by division and summarize
+    divisions = df['division'].unique()
+    summaries = []
+    
+    for division in divisions:
+        div_data = df[df['division'] == division]
+        if len(div_data) > 0:
+            summary = div_data.sem_agg("What are the common themes in these {caller_intent}?")
+            summaries.append({
+                'division': division,
+                'summary': summary,
+                'call_count': len(div_data)
+            })
+    
+    summary_df = pd.DataFrame(summaries)
+    print("Division summaries:")
+    for _, row in summary_df.iterrows():
+        print(f"- {row['division']} ({row['call_count']} calls): {row['summary']}")
+    print("✅ Semantic aggregation working!")
+except Exception as e:
+    print(f"❌ Semantic aggregation error: {e}")
+
+print("\n🎉 All Lotus.ai tests completed!")
+```
+
+### Step 2: Database Integration Test
+
+Create `test_database_integration.py`:
+
+```python
+import pandas as pd
+import psycopg2
+import lotus
+from lotus.models import LM, SentenceTransformersRM
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configure Lotus
+lm = LM(model='groq/llama-3.1-70b-versatile')
+rm = SentenceTransformersRM(model="intfloat/e5-base-v2")
+lotus.settings.configure(lm=lm, rm=rm)
+
+# Test database connection
+def test_db_connection():
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            database=os.getenv('DB_NAME'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD')
+        )
+        
+        # Test query
+        test_query = "SELECT COUNT(*) as total_records FROM cx.member_call_info LIMIT 1"
+        df = pd.read_sql(test_query, conn)
+        print(f"✅ Database connected! Total records: {df['total_records'].iloc[0]}")
+        
+        # Get sample data
+        sample_query = """
+        SELECT caller, agent, pty_id, calldate, enterprise, division, business_name, caller_intent 
+        FROM cx.member_call_info 
+        LIMIT 10
+        """
+        
+        sample_df = pd.read_sql(sample_query, conn)
+        print("📊 Sample data from database:")
+        print(sample_df.head())
+        
+        conn.close()
+        return sample_df
+        
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        print("Using mock data instead...")
+        
+        # Return mock data if DB connection fails
+        mock_data = {
+            "caller": ["+1-555-0101", "+1-555-0102", "+1-555-0103"],
+            "agent": ["John Smith", "Jane Doe", "Bob Wilson"],
+            "pty_id": ["PTY001", "PTY002", "PTY003"],
+            "calldate": ["2024-01-15", "2024-01-15", "2024-01-16"],
+            "enterprise": ["Acme Corp", "TechStart Inc", "Global Systems"],
+            "division": ["Billing", "Technical Support", "Sales"],
+            "business_name": ["Acme Corporation", "TechStart Innovations", "Global Systems Ltd"],
+            "caller_intent": [
+                "billing inquiry about monthly charges",
+                "software installation problem",
+                "interested in enterprise package"
+            ]
+        }
+        return pd.DataFrame(mock_data)
+
+# Test with real/mock data
+df = test_db_connection()
+
+# Apply semantic operations
+print("\n🧪 Testing semantic operations on real data:")
+
+# Semantic search for billing-related calls
+billing_calls = df.sem_filter("caller_intent is related to billing, payments, or charges")
+print(f"Found {len(billing_calls)} billing-related calls")
+
+# Categorize call complexity
+complexity_df = df.sem_map("Rate the complexity of this {caller_intent} as Simple/Medium/Complex")
+print("\nCall complexity analysis:")
+print(complexity_df[['caller_intent', 'sem_map']])
+
+print("\n✅ Database integration test completed!")
+```
+
+### Step 3: Full Application Test
+
+Create `test_full_app.py`:
+
+```python
+import gradio as gr
+import pandas as pd
+import lotus
+from lotus.models import LM, SentenceTransformersRM
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Simple test application
+class TestChatApp:
+    def __init__(self):
+        # Configure Lotus
+        lm = LM(model='groq/llama-3.1-70b-versatile')
+        rm = SentenceTransformersRM(model="intfloat/e5-base-v2")
+        lotus.settings.configure(lm=lm, rm=rm)
+        
+        # Sample data
+        self.sample_data = pd.DataFrame({
+            "caller": ["+1-555-0101", "+1-555-0102", "+1-555-0103", "+1-555-0104"],
+            "agent": ["John Smith", "Jane Doe", "Bob Wilson", "Alice Brown"],
+            "division": ["Billing", "Technical Support", "Sales", "Customer Service"],
+            "caller_intent": [
+                "billing dispute about overcharges",
+                "cannot install software properly",
+                "wants to upgrade service plan",
+                "complaining about slow response time"
+            ]
+        })
+    
+    def process_query(self, query, history):
+        try:
+            response_parts = [f"🔍 Processing: {query}"]
+            
+            # Apply semantic operations based on query
+            if "billing" in query.lower():
+                result = self.sample_data.sem_filter("caller_intent is related to billing or payments")
+                response_parts.append(f"Found {len(result)} billing-related calls")
+                
+            elif "urgent" in query.lower() or "important" in query.lower():
+                result, _ = self.sample_data.sem_topk("Which {caller_intent} is most urgent?", K=2, return_stats=True)
+                response_parts.append("Most urgent calls:")
+                
+            elif "sentiment" in query.lower():
+                result = self.sample_data.sem_map("What is the sentiment of {caller_intent}?")
+                response_parts.append("Sentiment analysis completed")
+                
+            else:
+                result = self.sample_data.head(3)
+                response_parts.append("Showing sample data")
+            
+            # Format result
+            if not result.empty:
+                response_parts.append("\n📊 Results:")
+                response_parts.append(result.to_string(index=False))
+            
+            response = "\n".join(response_parts)
+            history.append([query, response])
+            
+        except Exception as e:
+            error_msg = f"❌ Error: {str(e)}"
+            history.append([query, error_msg])
+        
+        return history, ""
+
+# Create and launch test app
+app = TestChatApp()
+
+def create_interface():
+    with gr.Blocks(title="Lotus.ai Test App") as interface:
+        gr.Markdown("# 🧪 Lotus.ai Semantic Operations Test")
+        
+        chatbot = gr.Chatbot(label="Test Chat", height=400)
+        
+        msg = gr.Textbox(label="Test Query", 
+                        placeholder="Try: 'show billing calls', 'find urgent calls', 'analyze sentiment'")
+        
+        submit = gr.Button("Test", variant="primary")
+        clear = gr.Button("Clear")
+        
+        submit.click(app.process_query, [msg, chatbot], [chatbot, msg])
+        msg.submit(app.process_query, [msg, chatbot], [chatbot, msg])
+        clear.click(lambda: ([], ""), outputs=[chatbot, msg])
+        
+        gr.Markdown("""
+        ### Test Commands:
+        - "show billing calls" - Test semantic filter
+        - "find urgent calls" - Test semantic ranking  
+        - "analyze sentiment" - Test semantic mapping
+        - "show sample data" - View raw data
+        """)
+    
+    return interface
+
+if __name__ == "__main__":
+    interface = create_interface()
+    interface.launch(debug=True, share=False)
+```
+
+## 🔧 Troubleshooting Guide
+
+### Common Issues & Solutions
+
+#### 1. Import Errors
+```bash
+# If lotus-ai import fails
+pip install --upgrade lotus-ai
+
+# If specific model imports fail
+pip install sentence-transformers torch
+```
+
+#### 2. API Key Issues
+```python
+# Test API key
+import litellm
+response = litellm.completion(
+    model="groq/llama-3.1-70b-versatile",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+print("API key working!" if response else "API key issue")
+```
+
+#### 3. Memory Issues
+```python
+# Use lighter models for testing
+rm = SentenceTransformersRM(model="all-MiniLM-L6-v2")  # Smaller model
+```
+
+#### 4. Database Connection Issues
+```bash
+# Test PostgreSQL connection
+psql -h localhost -p 5432 -U your_user -d your_db -c "SELECT 1;"
+```
+
+## 🚀 Running the Tests
+
+Execute tests in order:
+
+```bash
+# 1. Basic Lotus functionality
+python test_lotus_basic.py
+
+# 2. Database integration  
+python test_database_integration.py
+
+# 3. Full application test
+python test_full_app.py
+
+# 4. Run main application
+python call_data_chat_app.py
+```
+
+## 📊 Expected Output
+
+### Successful Test Results:
+```
+✅ Lotus.ai configured successfully!
+📊 Sample data created: 5 rows
+🔍 Test 1: Semantic Filter - ✅ Working!
+🗺️ Test 2: Semantic Map - ✅ Working!  
+📈 Test 3: Semantic Top-K - ✅ Working!
+📊 Test 4: Semantic Aggregation - ✅ Working!
+🎉 All Lotus.ai tests completed!
+```
+
+## 🎯 Performance Tips
+
+1. **Model Selection**: Start with smaller models for testing
+2. **Caching**: Enable embedding caching for better performance
+3. **Batch Processing**: Process multiple records together when possible
+4. **Memory Management**: Monitor RAM usage with large datasets
+
+## 📚 Next Steps
+
+After successful testing:
+1. Configure your actual database connection
+2. Customize semantic operations for your use cases  
+3. Add more sophisticated query parsing
+4. Implement user authentication and access controls
+5. Deploy using Docker or cloud services
+
+## 🆘 Support
+
+If you encounter issues:
+1. Check the [Lotus.ai GitHub](https://github.com/stanford-futuredata/lotus) for latest updates
+2. Verify all API keys are correctly set
+3. Test with minimal sample data first
+4. Check Python and package versions
               ========
 claude : 
 
